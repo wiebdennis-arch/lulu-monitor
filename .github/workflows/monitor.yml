@@ -1,0 +1,53 @@
+name: Lululemon Like New Monitor
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # every 10 minutes (GitHub may delay under load)
+  workflow_dispatch: {}       # allows manual "Run workflow" button for testing
+
+permissions:
+  contents: write             # needed to save seen_items.json back to the repo
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false   # never kill a run that's mid-notification
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}
+
+      - name: Install dependencies
+        run: |
+          pip install playwright requests
+          playwright install chromium --with-deps
+
+      - name: Run one monitor check
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RUN_ONCE: "1"
+        run: python likenew_monitor.py
+
+      - name: Save memory of seen items
+        run: |
+          git config user.name "monitor-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add seen_items.json
+          git diff --staged --quiet && echo "no changes" && exit 0
+          git commit -m "update seen items"
+          git pull --rebase --autostash
+          git push
